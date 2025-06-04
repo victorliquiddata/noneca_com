@@ -241,30 +241,6 @@ Putting these tests in something like `tests/test_extract_enrich.py` will catch 
 
 ---
 
-## 2. Implement & Test a Basic Loader
-
-Once your extractor/enricher are rock-solid, you can wire up a “loader” that pushes these enriched records into your SQLite schema. Suggested approach:
-
-1. **Create `data_loader.py`** (in `src/loaders/`) that:
-
-   * Accepts a list of enriched dicts.
-   * Opens a SQLAlchemy session (or plain `sqlite3` connection) to your `items` and `price_history` tables.
-   * Performs an upsert (insert or update) on each item:
-
-     * Check if `item_id` already exists in `items`. If so, update `current_price`, `sold_quantity`, `views`, etc.; otherwise insert a new row.
-   * Writes a new record into `price_history` with the current timestamp and `current_price`, `discount_percentage`, etc.
-
-2. **Write unit tests for `data_loader.py`**:
-
-   * Use a temporary in-memory SQLite (e.g. `sqlite:///:memory:`) so you don’t clobber your real DB.
-   * Verify that when you call `data_loader.insert_items(enriched_list)`:
-
-     * The `items` table ends up with the correct number of rows.
-     * A second call with the same item but updated price actually updates the existing row (not create a duplicate) and adds a new row to `price_history`.
-   * Test edge cases (e.g. missing required fields, invalid data types) so your loader fails gracefully or raises clear errors.
-
----
-
 ## 3. Hook Up a Simple ETL Script / Scheduler
 
 After you have:

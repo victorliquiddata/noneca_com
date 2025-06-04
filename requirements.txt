@@ -8,3 +8,4 @@ pandas
 setuptools
 certifi
 sqlalchemy
+pytest

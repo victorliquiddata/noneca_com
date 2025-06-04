@@ -1,4 +1,7 @@
 # src/extractors/items_extractor.py
+import pytest
+import sys
+import os
 import logging
 from typing import List, Dict, Optional
 from src.extractors.ml_api_client import create_client
@@ -114,20 +117,22 @@ def extract_items_with_enrichments(
 
             enriched_item = item.copy()
 
-            try:
-                # Add description if requested
-                if include_descriptions:
+            # Add description if requested
+            if include_descriptions:
+                try:
                     description = client.get_desc(token, item_id)
                     enriched_item["description"] = description.get("plain_text", "N/A")
+                except Exception as e:
+                    logger.warning(f"Failed to get description for item {item_id}: {e}")
 
-                # Add reviews if requested
-                if include_reviews:
+            # Add reviews if requested
+            if include_reviews:
+                try:
                     reviews = client.get_reviews(token, item_id)
                     enriched_item["rating_average"] = reviews.get("rating_average", 0)
                     enriched_item["total_reviews"] = reviews.get("total_reviews", 0)
-
-            except Exception as e:
-                logger.warning(f"Failed to enrich item {item_id}: {e}")
+                except Exception as e:
+                    logger.warning(f"Failed to get reviews for item {item_id}: {e}")
 
             enriched_items.append(enriched_item)
 
@@ -139,3 +144,29 @@ def extract_items_with_enrichments(
     except Exception as e:
         logger.error(f"Failed to extract enriched items for seller {seller_id}: {e}")
         return []
+
+
+# run_tests.py
+
+
+if __name__ == "__main__":
+    # Get the directory of the current script (project root)
+    project_root = os.path.dirname(os.path.abspath(__file__))
+
+    # Add the project root to the Python path
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    # Default pytest arguments — run in verbose mode
+    pytest_args = ["tests/", "-v"]  # Verbose output
+
+    # If additional arguments are passed, include them
+    if len(sys.argv) > 1:
+        pytest_args.extend(sys.argv[1:])
+
+    print(f"Running pytest with arguments: {pytest_args}")
+
+    # Run pytest
+    exit_code = pytest.main(pytest_args)
+
+    sys.exit(exit_code)

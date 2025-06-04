@@ -55,13 +55,18 @@ class TestMLClient(unittest.TestCase):
         print(f"✅ User: {user['nickname']} ({user['id']}, {user['site_id']})")
 
     def test_04_user_items(self):
-        if not TestMLClient.user_data:
+        # If user_data isn’t yet a dict, go fetch it:
+        if not isinstance(TestMLClient.user_data, dict):
             self.test_03_user_profile()
 
+        # Now Pylint knows user_data is a dict
         user_data = TestMLClient.user_data
-        items = self.client.get_items(self.token, user_data["id"], limit=5)
+        user_id = user_data.get("id")
+        self.assertIsNotNone(user_id, "Expected a valid 'id' in user_data")
 
+        items = self.client.get_items(self.token, user_id, limit=5)
         self.assertIsInstance(items, list)
+
         if items:
             item = items[0]
             self.assertIn("id", item)
@@ -72,14 +77,20 @@ class TestMLClient(unittest.TestCase):
         print(f"✅ Retrieved {len(items)} items")
 
     def test_05_item_details(self):
-        if not TestMLClient.user_data:
+        # Ensure user_data is a dict before continuing:
+        if not isinstance(TestMLClient.user_data, dict):
             self.test_03_user_profile()
 
         user_data = TestMLClient.user_data
-        items = self.client.get_items(self.token, user_data["id"], limit=1)
+        user_id = user_data.get("id")
+        self.assertIsNotNone(user_id, "Expected a valid 'id' in user_data")
+
+        items = self.client.get_items(self.token, user_id, limit=1)
+        self.assertIsInstance(items, list)
 
         if items:
-            item_id = items[0]["id"]
+            item_id = items[0].get("id")
+            self.assertIsNotNone(item_id, "Expected item to have an 'id'")
 
             item = self.client.get_item(self.token, item_id)
             self.assertIn("id", item)
@@ -100,12 +111,16 @@ class TestMLClient(unittest.TestCase):
             print("⚠️ No items to test")
 
     def test_06_orders(self):
-        if not TestMLClient.user_data:
+        # Ensure user_data is a dict before continuing:
+        if not isinstance(TestMLClient.user_data, dict):
             self.test_03_user_profile()
 
         user_data = TestMLClient.user_data
+        user_id = user_data.get("id")
+        self.assertIsNotNone(user_id, "Expected a valid 'id' in user_data")
+
         try:
-            orders = self.client.get_orders(self.token, user_data["id"], limit=5)
+            orders = self.client.get_orders(self.token, user_id, limit=5)
             self.assertIsInstance(orders, list)
             print(f"✅ Retrieved {len(orders)} orders")
         except Exception as e:
@@ -139,10 +154,13 @@ class TestMLClient(unittest.TestCase):
             print(f"⚠️ Exposures: {e}")
 
     def test_09_search(self):
+        # Ensure site_id is set before continuing:
         if not TestMLClient.site_id:
             self.test_03_user_profile()
 
         site_id = TestMLClient.site_id
+        self.assertIsNotNone(site_id, "Expected a valid site_id")
+
         try:
             results = self.client.search(
                 self.token, site_id, query="smartphone", limit=5
@@ -151,14 +169,17 @@ class TestMLClient(unittest.TestCase):
             self.assertIn("results", results)
             print(f"✅ Search returned {len(results.get('results', []))} items")
 
-            if TestMLClient.user_data:
-                seller_results = self.client.search(
-                    self.token, site_id, seller_id=TestMLClient.user_data["id"], limit=5
-                )
-                self.assertIsInstance(seller_results, dict)
-                print(
-                    f"✅ Seller search returned {len(seller_results.get('results', []))} items"
-                )
+            # If user_data exists and is a dict, we can also do a seller_id lookup
+            if isinstance(TestMLClient.user_data, dict):
+                seller_id = TestMLClient.user_data.get("id")
+                if seller_id:
+                    seller_results = self.client.search(
+                        self.token, site_id, seller_id=seller_id, limit=5
+                    )
+                    self.assertIsInstance(seller_results, dict)
+                    print(
+                        f"✅ Seller search returned {len(seller_results.get('results', []))} items"
+                    )
         except Exception as e:
             print(f"⚠️ Search: {e}")
 
