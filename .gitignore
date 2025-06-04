@@ -1,0 +1,85 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code
+.vscode/
+.history/
+
+# Environment variables
+.env
+.env.*
+
+# SQLite database files
+*.db
+*.sqlite3
+data/
+
+# Logs and runtime
+*.log
+*.pid
+*.seed
+*.out
+*.err
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# MyPy / Pylint / Bandit / Ruff
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+*.lint
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# JetBrains IDEs
+.idea/
+
+# Backup files
+*~
+*.bak
+*.swp
+*.swo
+
+# Temporary folders
+tmp/
+temp/
