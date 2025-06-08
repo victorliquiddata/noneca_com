@@ -103,8 +103,8 @@ def main():
     # Default seller IDs for intimate apparel market analysis
     # These would typically come from config or command line args
     default_sellers = [
-        "123456789",  # Example seller ID - replace with actual sellers
-        "987654321",  # Example seller ID - replace with actual sellers
+        "354140329",  # Example seller ID - replace with actual sellers
+        # "987654321",  # Example seller ID - replace with actual sellers
     ]
 
     # Check for command line seller ID argument

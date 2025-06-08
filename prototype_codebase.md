@@ -1,41 +1,5 @@
----
 ```python
-# Configuration management
-## config/config.py
-#!/usr/bin/env python3
-import os
-from dataclasses import dataclass
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-@dataclass
-class Config:
-    client_id: str = os.getenv("ML_CLIENT_ID")
-    client_secret: str = os.getenv("ML_CLIENT_SECRET")
-    redirect_uri: str = os.getenv("ML_REDIRECT_URI")
-    timeout: int = int(os.getenv("API_TIMEOUT", 30))
-    rate_limit: int = int(os.getenv("RATE_LIMIT", 100))
-
-    # API URLs
-    api_url: str = "https://api.mercadolibre.com"
-    auth_url: str = "https://auth.mercadolivre.com.br"
-
-    # Files
-    token_file: str = "ml_tokens.json"
-
-    # Fallback tokens
-    fallback_access: str = os.getenv("ACCESS_TOKEN")
-    fallback_refresh: str = os.getenv("REFRESH_TOKEN")
-    fallback_expires: str = os.getenv("TOKEN_EXPIRES")
-
-
-cfg = Config()
-
-
 # ---
-
 # API client
 # src/extractors/ml_api_client.py
 #!/usr/bin/env python3
@@ -293,8 +257,8 @@ def get_token():
 def create_client():
     return MLClient(), get_token()
 
-
 # ---
+
 # src/extractors/items_extractor.py
 import logging
 from typing import List, Dict, Optional
@@ -437,8 +401,186 @@ def extract_items_with_enrichments(
         logger.error(f"Failed to extract enriched items for seller {seller_id}: {e}")
         return []
 
+# ---
+
+# Data loading
+# src/loaders/data_loader.py
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
+
+from src.models.models import Item, PriceHistory, Seller, create_all_tables
+
+
+def load_items_to_db(enriched_items, db_url="sqlite:///./noneca_analytics.db"):
+    """
+    Upsert a list of enriched item dicts into `items` and append to `price_history`.
+    If seller info is embedded, upsert into `sellers` as well.
+    """
+    if not enriched_items:
+        return
+
+    engine = create_engine(db_url, echo=False, future=True)
+    Session = sessionmaker(bind=engine)
+    create_all_tables(engine)
+
+    session = Session()
+    try:
+        for record in enriched_items:
+            item_id = record.get("item_id")
+            if not item_id:
+                continue  # skip invalid entries
+
+            # Upsert item
+            existing = session.get(Item, item_id)
+            if existing:
+                # Update only the mutable fields
+                for field in (
+                    "title",
+                    "category_id",
+                    "current_price",
+                    "original_price",
+                    "available_quantity",
+                    "sold_quantity",
+                    "condition",
+                    "brand",
+                    "size",
+                    "color",
+                    "gender",
+                    "views",
+                    "conversion_rate",
+                    "seller_id",
+                    "updated_at",
+                ):
+                    if field in record:
+                        setattr(existing, field, record[field])
+                session.add(existing)
+            else:
+                item_kwargs = {k: record[k] for k in record.keys() if hasattr(Item, k)}
+                session.add(Item(**item_kwargs))
+
+            # Optionally upsert seller if detailed info present
+            seller_info = {
+                "seller_id": record.get("seller_id"),
+                "nickname": record.get("seller_nickname"),
+                "reputation_score": record.get("seller_reputation"),
+                "transactions_completed": record.get("seller_transactions"),
+                "is_competitor": record.get("is_competitor"),
+                "market_share_pct": record.get("market_share_pct"),
+            }
+            sid = seller_info.get("seller_id")
+            if sid and any(v is not None for v in seller_info.values()):
+                existing_seller = session.get(Seller, sid)
+                if existing_seller:
+                    for key, val in seller_info.items():
+                        if key != "seller_id" and val is not None:
+                            setattr(existing_seller, key, val)
+                    session.add(existing_seller)
+                else:
+                    session.add(Seller(**seller_info))
+
+            # Append price history snapshot
+            price_record = {
+                "item_id": item_id,
+                "price": record.get("current_price"),
+                "discount_percentage": record.get("discount_percentage"),
+                "competitor_rank": record.get("competitor_rank"),
+                "price_position": record.get("price_position"),
+            }
+            session.add(PriceHistory(**price_record))
+
+        session.commit()
+    except SQLAlchemyError:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 # ---
+
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Date,
+    DateTime,
+    func,
+    text,
+)
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+
+class Item(Base):
+    __tablename__ = "items"
+
+    item_id = Column(String(50), primary_key=True)
+    title = Column(String(500))
+    category_id = Column(String(50))
+    current_price = Column(Float(precision=2))
+    original_price = Column(Float(precision=2))
+    available_quantity = Column(Integer)
+    sold_quantity = Column(Integer)
+    condition = Column(String(20))
+    brand = Column(String(100))
+    size = Column(String(20))
+    color = Column(String(50))
+    gender = Column(String(20))
+    views = Column(Integer, default=0)
+    conversion_rate = Column(Float(precision=4))
+    seller_id = Column(Integer)
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(
+        DateTime,
+        default=func.current_timestamp(),  # pylint: disable=E1102
+        onupdate=func.current_timestamp(),  # pylint: disable=E1102
+    )
+
+
+class PriceHistory(Base):
+    __tablename__ = "price_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(String(50))
+    price = Column(Float(precision=2))
+    discount_percentage = Column(Float(precision=2))
+    competitor_rank = Column(Integer, nullable=True)
+    price_position = Column(String(20), nullable=True)
+    recorded_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class Seller(Base):
+    __tablename__ = "sellers"
+
+    seller_id = Column(Integer, primary_key=True)
+    nickname = Column(String(100), nullable=True)
+    reputation_score = Column(Float(precision=2), nullable=True)
+    transactions_completed = Column(Integer, nullable=True)
+    is_competitor = Column(Boolean, default=False)
+    market_share_pct = Column(Float(precision=2), nullable=True)
+
+
+class MarketTrend(Base):
+    __tablename__ = "market_trends"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    keyword = Column(String(200))
+    search_volume = Column(Integer)
+    category_id = Column(String(50))
+    trend_date = Column(Date)
+    growth_rate = Column(Float(precision=2))
+
+
+def create_all_tables(engine):
+    """Create all tables in the target database."""
+    Base.metadata.create_all(engine)
+
+# ---
+
 # src/transformers/product_enricher.py
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
@@ -539,5 +681,179 @@ def enrich_items(raw_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return []
 
     return [enrich_item(item) for item in raw_items if item]
----
+
+# ---
+
+# Configuration management
+## config/config.py
+#!/usr/bin/env python3
+import os
+from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass
+class Config:
+    client_id: str = os.getenv("ML_CLIENT_ID")
+    client_secret: str = os.getenv("ML_CLIENT_SECRET")
+    redirect_uri: str = os.getenv("ML_REDIRECT_URI")
+    timeout: int = int(os.getenv("API_TIMEOUT", 30))
+    rate_limit: int = int(os.getenv("RATE_LIMIT", 100))
+
+    # API URLs
+    api_url: str = "https://api.mercadolibre.com"
+    auth_url: str = "https://auth.mercadolivre.com.br"
+
+    # Files
+    token_file: str = "ml_tokens.json"
+
+    # Fallback tokens
+    fallback_access: str = os.getenv("ACCESS_TOKEN")
+    fallback_refresh: str = os.getenv("REFRESH_TOKEN")
+    fallback_expires: str = os.getenv("TOKEN_EXPIRES")
+
+
+cfg = Config()
+
+# ---
+
+# Main entry point
+#!/usr/bin/env python3
+"""
+Main ETL pipeline orchestrator for Noneca.com Mercado Livre Analytics Platform.
+Extracts product data, enriches it, and loads into database.
+"""
+
+import sys
+import logging
+from typing import List, Dict, Optional
+
+from src.extractors.items_extractor import extract_items_with_enrichments
+from src.transformers.product_enricher import enrich_items
+from src.loaders.data_loader import load_items_to_db
+
+# Configure minimal logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
+
+
+def run_etl_pipeline(
+    seller_id: str,
+    limit: int = 50,
+    include_descriptions: bool = True,
+    include_reviews: bool = False,
+    db_url: str = "sqlite:///./noneca_analytics.db",
+) -> bool:
+    """
+    Execute complete ETL pipeline for a single seller.
+
+    Returns:
+        True if pipeline completed successfully, False otherwise
+    """
+    logger.info(f"Starting ETL pipeline for seller {seller_id}")
+
+    # Extract
+    logger.info("Extracting items...")
+    raw_items = extract_items_with_enrichments(
+        seller_id=seller_id,
+        limit=limit,
+        include_descriptions=include_descriptions,
+        include_reviews=include_reviews,
+    )
+
+    if not raw_items:
+        logger.warning(f"No items extracted for seller {seller_id}")
+        return False
+
+    logger.info(f"Extracted {len(raw_items)} items")
+
+    # Transform
+    logger.info("Enriching items...")
+    enriched_items = enrich_items(raw_items)
+
+    if not enriched_items:
+        logger.error("Enrichment failed - no items to load")
+        return False
+
+    logger.info(f"Enriched {len(enriched_items)} items")
+
+    # Load
+    logger.info("Loading items to database...")
+    try:
+        load_items_to_db(enriched_items, db_url)
+        logger.info("ETL pipeline completed successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Loading failed: {e}")
+        return False
+
+
+def run_multi_seller_pipeline(
+    seller_ids: List[str],
+    limit: int = 50,
+    db_url: str = "sqlite:///./noneca_analytics.db",
+) -> Dict[str, bool]:
+    """
+    Execute ETL pipeline for multiple sellers.
+
+    Returns:
+        Dictionary mapping seller_id to success status
+    """
+    results = {}
+
+    for seller_id in seller_ids:
+        try:
+            success = run_etl_pipeline(seller_id=seller_id, limit=limit, db_url=db_url)
+            results[seller_id] = success
+        except Exception as e:
+            logger.error(f"Pipeline failed for seller {seller_id}: {e}")
+            results[seller_id] = False
+
+    return results
+
+
+def main():
+    """Main entry point - run ETL pipeline with default configuration."""
+
+    # Default seller IDs for intimate apparel market analysis
+    # These would typically come from config or command line args
+    default_sellers = [
+        "354140329",  # Example seller ID - replace with actual sellers
+        # "987654321",  # Example seller ID - replace with actual sellers
+    ]
+
+    # Check for command line seller ID argument
+    seller_id = sys.argv[1] if len(sys.argv) > 1 else None
+
+    if seller_id:
+        # Single seller mode
+        logger.info(f"Running ETL for single seller: {seller_id}")
+        success = run_etl_pipeline(seller_id, limit=100)
+        sys.exit(0 if success else 1)
+
+    # Multi-seller mode
+    logger.info("Running ETL for multiple sellers")
+    results = run_multi_seller_pipeline(default_sellers, limit=50)
+
+    # Report results
+    successful = sum(results.values())
+    total = len(results)
+    logger.info(
+        f"Pipeline completed: {successful}/{total} sellers processed successfully"
+    )
+
+    # Exit with error code if any pipeline failed
+    sys.exit(0 if successful == total else 1)
+
+
+if __name__ == "__main__":
+    main()
+
+# ---
 ```

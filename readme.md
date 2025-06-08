@@ -171,7 +171,7 @@ noneca_com_main_v1_2/
 ├── .env                            # Environment secrets --> active and functional
 ├── .gitignore                      # Git ignore rules --> comprehensive implementation
 ├── ml_tokens.json                  # Token management --> active and functional
-├── main.py                         # Entry point
+├── main.py                         # Entry point --> active and functional, currently in charge of basic ETL orchestration
 └── readme.md                       # Project README
 ```
 
@@ -441,7 +441,11 @@ The backend ETL infrastructure is now fully operational:
 * Load logic is reliable and tested.
 * The SQLite database is ready to ingest real Mercado Livre product data.
 
-Next phase: **Begin full ETL runs against real seller IDs to populate the DB**, then shift to **dashboarding and analytics layers** (Phase 2).
+Next phase: **Begin full ETL runs against real seller IDs to populate the DB**, then shift to **dashboarding and analytics layers**.
+
+## Addendum
+
+--> basic pipeline from original project scope is ready and working
 
 ---
 

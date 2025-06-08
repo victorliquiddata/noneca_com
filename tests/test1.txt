@@ -1,0 +1,27 @@
+# File: api_example.py
+
+import requests
+
+
+def fetch_user(user_id):
+    url = f"https://jsonplaceholder.typicode.com/users/{user_id}"
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()  # Raises an HTTPError if the response code was 4xx/5xx
+        user_data = response.json()
+        return user_data
+    except requests.RequestException as e:
+        print(f"Error fetching user: {e}")
+        return None
+
+
+def main():
+    user = fetch_user(1)
+    if user:
+        print("User fetched successfully:")
+        print(f"Name: {user['name']}")
+        print(f"Email: {user['email']}")
+
+
+if __name__ == "__main__":
+    main()

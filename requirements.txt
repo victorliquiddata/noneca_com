@@ -9,3 +9,7 @@ setuptools
 certifi
 sqlalchemy
 pytest
+tqdm
+paste
+psutil
+tenacity
